@@ -1,0 +1,553 @@
+(C)Copyright 2017-2023 Marvell(R). All rights reserved
+=========================================================================
+
+README for spi_flash.exe v3.05.0003
+--------------------------------------
+Marvell JTAG SPI Flash Programmer 
+Supported chip types:
+88Q5050/88Q5030           referred to as AES1 devices
+88Q6113/88Q5072/88Q5040   referred to as AES2 devices
+88Q5152/88Q5151/88Q5192
+MVQ6223/MVQ6222           referred to as AES3_1 devices
+
+All JTAG based tools require the Marvell USB-JTAG interface or the
+JTAGLive adapter (www.jtaglive.com).
+The Development boards except those for 88Q5050 have the USB-JTAG
+interface integrated and just need power supply and USB being connected.
+
+The 88Q5050 Development Boards require a separate USB to JTAG interface 
+connected via cable to the appropriate connector.
+
+All adapters require the installation of the necessary driver from FTDI
+(CDM212xx_setup.exe) and will work on Windows 7, 8.1 and 10.
+
+===================================================================
+Important note on connecting the USB-JTAG interface to the 88Q5050 hardware
+
+The recommended way of how to connect the USB-JTAG adapter is:
+- Power off the 88Q5050 board.
+- DO NOT yet connect the USB part of the USB-JTAG adapter to the computer.
+- Attach the cable to the JTAG connector of the board.
+- Power the 88Q5050 board.
+- Connect the USB part of the USB-JTAG adapter to the computer.
+- Press the RESET button of the board.
+- Start the JTAG based tool.
+
+The recommended way for powering down is:
+- Disconnect the USB part of the USB-JTAG adapter.
+- Power down the switch.
+
+===================================================================
+
+
+Known limitations
+------------------
+Coexistence with JTAG tools with versions prior to v3.05.0000:
+Using versions of spi_flash.exe or prior to v3.05.0000 from the same directory
+as spi_flash.exe after any invocation spi_flash.exe may lead to spi_flash.exe 
+using updated .sfdp files from sfdp subdirectory that are incompatible with the 
+code in the older version. This will lead to a program abort when checking 
+SPI flash device compatibility. (e.g. with GigaDevice flash devices)
+To make spi_flash.exe work again, erase the sfdp subdirectory and move
+previous versions of spi_flash.exe to a different directory.
+
+
+USB3: spi_flash.exe will not work if the Marvell USB2JTAG adapter is
+      plugged into an USB3 port on Windows 7 (driver problem).
+
+JTAGLive adapter:
+All Automotive Ethernet Switch devices (AES1..3) share signal pins with 
+bootstrap pins during RESET.
+AES1 devices share bootstrap pin ADDRn[4] and AES2 and AES3 devices share 
+bootstrap pin CPU_EN with TDO of the JTAG interface. 
+
+When powering/resetting an 88Q5050 Development Board prior to Rev. B1 or a
+custom board with the JTAG interface designed as in the 88Q5050 Automotive
+Ethernet Switch Reference Design (dated October 2016), or a AES2 or AES3 
+development board while being connected to a JTAGLive adapter the 
+bootstrap pin will always be read as 0.
+(Since the AES2 and AES3 development boards all have a USB to JTAG interface 
+onboard, the use case with a JTAGLive adapter will be rare)
+
+Reason: The board/reference design has a 4K7 pull-up resistor to 3.3V
+and the JTAGLive adapter has a 2K pull-down for the TDO input circuitry.
+This leads to a wrong bootstrap value when the JTAGLive adapter is connected 
+during RESET (even when USB is not connected).
+
+Effects: 
+- The 88Q5050 will have its device number incremented by 16 and newer
+  firmware versions will assign the default MAC address 02:00:00:00:00:01 because the
+  MAC address setting is bound to a configured device number, which (normally)
+  has a different value.
+
+- The AES2 and AES3 will/may then have the CPU disabled, so any firmware 
+  programmed in the flash won't/might not start.
+
+Workaround: Unplug/plug the 10pin header of the "flying wires" of the JTAGLive
+adapter before/after every RESET/POWER-UP of the board.
+
+OR
+
+Permanently change the respective pull-up resistor to 1K.
+
+
+
+Installation
+-------------
+In order to be able to use spi_flash.exe you need:
+   - a board for a supported device with JTAG access,
+   - a USB to JTAG interface (either Marvell or onboard or JTAGLive).
+   - the FTDI D2XX driver for the Windows Platform in use installed.
+     (CDM212xx_Setup.exe for Windows 7..Windows 10)
+   - spi_flash.exe copied to a subdirectory of your choice.
+
+
+Overview
+---------
+
+spi_flash.exe is the command line tool with which you can access the SPI flash
+memory device of a Marvell Automotive Ethernet Switch.
+
+Its main use is for updating the device's firmware.
+
+The flash image you will be writing with this tool contains a master boot 
+record (MBR), an area with MAC address configuration data and the 
+firmware code. 
+
+The tool checks whether or not an MBR is present in the flash.
+If there's no MBR present in the flash, or the MBR in the image file differs, 
+the whole flash image will be written to the flash.
+Otherwise only the specified firmware part (-update=  ) is updated.
+
+Programming the firmware is required if the firmware shall run on a board. 
+This initial programming includes writing the MBR and the MAC address area.
+The format of the MAC address section is described in a section at the
+end of this readme. If a firmware is running on the devices's management CPU
+it is strongly recommended to assign a unique MAC address to it. This can
+be done by patching the firmware image file with the MAC address before
+invoking fwupdate.bat for the initial flash programming run.
+(The Firmware Image Patch Tool is available as separate tool)
+
+Invocation
+-----------
+spi_flash.exe <command line parameters>
+
+The batch file fwupdate.bat is provided for easy invocation of a firmware update.
+
+Example:
+fwupdate.bat ..\Firmware\88Q5072_flash.bin
+
+fwupdate also sets some default options to the invocation of spi_flash.exe:
+-jtagmode=MAX -update=SPD -fastverify
+
+and adds 
+-infile=..\Firmware\88Q5072_flash.bin   
+plus any additional parameter (up to 9) on the command line.
+
+When using an 88Q5192 device in JTAG daisy-chain mode, the additional 
+option -target=1 is necessary to access the second device.
+
+HINT: When invoking spi_flash.exe directly, important data 
+     (MBR, MAC address configuration) could be overwritten accidentally 
+      when using the wrong options.
+      This can be prevented by using fwupdate.bat for firmware updates.
+
+
+List of command line options
+-----------------------------
+spi_flash.exe -? shows the possible command line options.
+
+Output:
+h:\JTAG>spi_flash.exe -?
+
+Marvell JTAG SPI Flash Programmer v3.05.0003
+
+Command line options for spi_flash.exe:
+-infile=s        - Use file s for update/write/verify (default: ./flash.bin)
+-outfile=s       - Use file s for read/verify (default: ./verifyme.bin)
+-address=x       - Use x as start address for read/write/verify/dump (default: 0)
+-size=x          - Limit the size for read/write/verify/erase/dump
+                   Value is in bytes e.g. 2048 for 2KB, 0x1_0000 for 64KB
+-write           - Write the content of the file into the SPI device
+-update=s        - Write only specified partition(s) of firmware image
+                   Valid partitions: P(rimary), S(econdary), D(ata) (can be combined)
+                   A(pplication Data), D(ata) or X(Security Artifacts) (separate invocation)
+-fastverify      - Compare only non-empty (0xFF) written data-fastverify     
+-read            - Read the contents of the SPI device and store into outfile
+-verify          - like -read but also compare to infile
+-dump            - Reads and dumps the content of the SPI device
+                   options address, size and mode apply
+-dmode=1|2|4|8   - Dump as bytes(1)/words(2)/dwords(4)/qwords(8) (default: 1)
+                   modifiers (added) _ visual split, ! single-column, + add ASCII
+                   e.g. -dmode=4!+   or -dmode=8_!
+-LE              - Dump as little-endian when dmode is above 1   
+-erase           - Erases the device. Use address and size to define region
+                   BulkErase, if size >= size of device (e.g.0x100_0000)
+                   may be combined with -verify for checking the erase 
+-force           - Allow area to be written to overlap regions defined in MBR
+-maxflashmhz=i   - limit the maximum SPI clock (default: 84)
+-flashmode=s     - use specified flash output mode for read (default: QIOR)
+-logdetect:s     - Log flash detection and SFDP checking into file s (default: sfdp.log)
+-listdevices     - list devices on all JTAG scan chains and exit
+-interface=n     - Use specific USB to JTAG adapter (default: 0)
+-serial=n        - select JTAG interface by serial number (JTAGLive only)
+-target=n        - use specific device on JTAG scan chain
+-jtagfreq=n      - JTAG clock frequency in kHz (1000..15000, default: 6000)
+-jtagmode        - JTAG operating mode (NORMAL, FAST or MAX) (default: NORMAL)
+-showSPI         - show QSPI register settings
+-verbose_init    - Display low-level info during startup
+-quiet           - Reduce output to minimum
+-supported_flash - Show list of supported flash devices and exit
+-help|?'         - Show this page and exit
+
+Command line option may be abbreviated as long as they remain unique.
+e.g. -in -out -fast -supported
+
+
+Exit codes
+-----------
+0   - no error, normal termination
+1   - command / parameter error
+2   - timeout error
+3   - parameter or value is missing
+4   - error related to a value's range
+5   - error not belonging to any of the other classes
+9   - error is related to JTAG
+10  - error reading from / writing to flash
+11  - verify error
+
+Technical support
+------------------
+If you need help and assistance please follow the link to the salesforce server
+(https://mymarvell.force.com/customers/login) and login in onto your account
+and open a case for your problem.
+
+
+JTAG mode
+---------
+By using the parameter -jtagmode= you can control the way JTAG commands are sent 
+to the device. 
+NORMAL mode sends each command separately, and is therefore rather slow.
+When treating larger amounts of data (read or write a firmware) data transfer 
+is done in blocks.
+FAST mode fills a buffer with commands and sends the JTAG commands in blocks.
+MAX mode eliminates the repeated creation and filling of this buffer,
+by creating this buffer only once and directly updating the buffer for further 
+blocks, which is much faster but still depending on the CPU of the PC used.
+
+Speed comparison of the modes:
+
+                          |              JTAG Mode              |
+Action                    |   NORMAL  |    FAST    |    MAX     |
+--------------------------+-----------+------------+------------+ 
+Flashing FW image ~256kB  |           |            |            |
+without erase             |     7s    |     4s     |     2s     | 
+with erase                |    11s    |     8s     |     6s     |
+with erase and fastverify |    24s    |    12s     |     7s     |
+Erasing 1MB with verify   |    48s    |    16s     |     4s     |
+Writing 1MB of data       |    30s    |    20s     |    11s     |
+with verify               |    76s    |    34s     |    14s     |
+
+As you can see from this table, read operations gain more from a 
+faster JTAG mode than write operations.
+All operations involving an erase may vary in speed depending on the 
+used type of flash device and the proportion of non-empty cells within 
+in the region being erased.
+ 
+ 
+When trying to read from the flash with JTAG mode set to FAST or MAX the 
+minimum required SPI clock speed setting to avoid read errors is given
+in the table below:
+
+             |        JTAG Mode       |
+Flash mode   |   NORMAL  | FAST/MAX   |
+-------------+-----------+------------+
+READ         |  18 MHz   |   18 MHz   |
+FAST_READ    |  18 MHz   |   84 MHz   | 
+DIOR         |  18 MHz   |   43 MHz   | 
+QIOR         |  18 MHz   |   43 MHz   | 
+
+
+With SPI flash speed/mode being below these values, you will get errors 
+and a warning regarding flash speed may be displayed.
+
+IMPORTANT: If you get an unrecoverable JTAG error, you need to reset the board.
+
+
+Using spi_flash.exe to update partitions defined in SPB
+--------------------------------------------------------------
+Starting with 88Q5152/88Q5192 Rev B0, a new flash flayout is used.
+This layout extends the MBR by a Software Pointer Block (SPB) defining 
+further flash areas besides Primary and Secondary Partition.
+In order to be able to update these partitions the -update command has been 
+extended and supports a second form using -update=A|D|X (Only one of these) 
+together with -infile specifying a binary file containing only data for that partition.
+If -infile specifies a full firmware image the data for the selected partition
+will be read from the corresponding area of that image of course.
+
+NOTE: -update=D -infile=<data file> is NOT directly supported for the older flash layout,
+but can be achieved using -write -infile=<data file> -address=<target address> -force
+
+Using fwupdate.bat to update single flash images for 88Q5192
+-----------------------------------------------------------
+88Q5192 devices configured for single SPI flash mode, require a FW image with 
+single flash layout. This image basically contains two Primary, two Secondary
+and two Data (unsecure configuration data) partitions at different offsets
+for the two dies of the devices.
+fwupdate.bat will "update" the S,P and D partition of the first die, if not 
+invoked with further parameters. 
+In order to fully update the device one needs to re-invoke fwupdate,bat with 
+the additional parameter -target=1, to also update the image for the second die.
+
+Alternative: use spi_flash.exe -write -force -infile=<imagefile> instead of
+fwupdate.bat. 
+ATTENTION: The used firmware image file MUST contain the unsecure configuration 
+data to be used for both dies since the automatic save and restore for a valid 
+configuration is only executed for the current target.
+If not you will overwrite the D partition for the other die (depending on -target=),
+since only the address configuration of the die used for flashing will be saved 
+and restored.
+
+
+SHA256 instead of MD5
+----------------------
+Starting with tool version v3.03.0002 the hash algorithm used for verifying flash
+contents / checking for changes from MD5 to SHA256.
+This leads to compatible checksums/hashes with other Marvell tools and allows the
+use of the HSM hardware 88Q5152/88Q5192 devices. (>= Rev B0, A0 not supported  due
+to hardware limitations)
+This improves the speed for (fast)verify from 1.2s to 55ms for a current flash image
+and from 35s to 580ms for a full 16MB image.
+
+
+Saving the current firmware:
+-----------------------------
+V1 firmware:
+spi_flash.exe -size=0x9_0004 -read -outfile=.\current_firmware.bin
+
+non-V1 firmware:
+spi_flash.exe -size=0x14_0000 -read -outfile=.\current_firmware.bin
+
+Explicitly verifying the current firmware
+------------------------------------------
+spi_flash.exe -verify -infile=..\Firmware\<name of firmware image file>
+
+
+MAC-Address configuration area in firmware image
+------------------------------------------------
+(Unsecured Data area)
+
+V1 firmware:
+------------
+The area where the MAC address used by the firmware starts
+at offset 0x1000 and has a length of 16 bytes.
+
+Example: (MAC-ADDR 00:11:22:33:44:55)
+1000: 4D 41 43 2D 41 44 44 52 00 11 22 33 44 55 00 00
+1010: FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF FF
+
+
+non-V1 firmware:
+----------------
+The area where the MAC address used by the firmware is stored, is defined
+by the offset  for the 'D' partition in the MBR and has a minimum length 
+of 18 bytes.
+e.g. at offset 0x10000 
+
+Example: (MAC-ADDR 02:00:00:00:00:01)
+010000: 40 FA CF 01 00 0C 00 01 00 00 F3 01 02 00 00 00
+010010: 00 01 FF FF FF FF FF FF FF FF FF FF FF FF FF FF
+
+
+Update with patched image
+--------------------------
+When using the Marvell JTAG SPI Flash Programmer to prepare an image
+already containing an address configuration (MAC address, IP addresses) the
+Marvell JTAG SPI Flash Programmer will try to keep an already flashed address configuration 
+when this makes sense.
+ 
+The following table shows the update behavior under the precondition that
+the patched non-V1 image has a MAC address other than the default MAC address 
+(02:00:00:00:00:01) configured.
+(Note: a pristine non-V1 image patched with only the IP addresses added is 
+treated as unpatched.)
+
+To get the current configured MAC address use:
+e.g. for a AESGen2 device:
+    spi_flash.exe -dump -size=8 -addr=0x1_000c -dmode=8
+
+	
+and ignore the last two bytes printed.
+
+previous flash state    | unpatched non-V1 image  | patched non-V1 image
+------------------------------------------------------------------------
+  FW V1 + MAC address   |   MAC restored          |  MAC NOT restored
+                        |                         |
+  FW V2 + AddrCfg       |   Cfg restored          |  Cfg NOT restored
+                        |                         |
+  invalid MBR, V1 MAC   |   MAC restored          |  MAC NOT restored
+                        |                         |
+  invalid MBR, V2 Cfg   |   Cfg restored          |  Cfg NOT restored
+                        |                         |
+  empty                 |   from image            |  from image
+                        |                         |
+
+  The table shows that the configuration in a patched non-V1 image takes
+  precedence over any already configured addresses, resulting from the
+  fact that otherwise it would get hard to update the address
+  configuration for a non-V1 firmware image.
+
+
+Supported flash devices:
+-------------------------
+For the hardware and software requirements for compatible flash types please 
+refer to the document "88Q5050_SPI_Flash_Devices_and_Parameters.pdf" on the 
+Marvell Extranet. (Path: Automotive Solutions |Ethernet Switches |88Q5050 |Tool)
+
+The JTAG SPI Flash Programmer tool supports the flash types used on the Marvell 
+Automotive Ethernet Switch Development Boards and the ones in the list in the 
+document mentioned above.
+spi_flash.exe also supports some smaller/bigger devices of the same series 
+of the tested devices.
+To get the list of explicitly supported flash types invoke
+spi_flash.exe -supported_flash
+
+The current version will output:
+Marvell JTAG SPI Flash Programmer v3.05.0003
+
+Supported Serial Flash Devices:
+
+ID: 010215 - Cypress/Spansion S25FL032P 32-MBit 3.0V Flash Memory
+ID: 014015 - Cypress 16MBit S25FL116K 3.0V SPI Flash Memory
+ID: 014016 - Cypress 32MBit S25FL132K 3.0V SPI Flash Memory
+ID: 016018 - Cypress S25FL128L 3.0V 128MBit FL-L SPI Flash Memory
+ID: 9d4015 - ISSI IS25LQ016B 3V 16-MBit Quad Serial Flash Memory
+ID: 9d4016 - ISSI IS25LQ032B 3V 16-MBit Quad Serial Flash Memory
+ID: 9d6015 - ISSI IS25LP016D 2.3V-3.6V 16-MBit Quad Serial Flash Memory
+ID: 9d6016 - ISSI IS25LP032 2.3V-3.6V 32-MBit Serial Flash Memory
+ID: 9d6017 - ISSI IS25LP064 2.3V-3.6V 32-MBit Serial Flash Memory
+ID: 9d6018 - ISSI IS25LP128 3V 128-MBit Serial Flash Memory
+ID: c22016 - Macronix MX25L3233F/MX25L3235F 3V 32-MBit Serial Flash Memory
+ID: c22017 - Macronix MX25L6433F/MX25L6435F 3V 64-MBit Serial Flash Memory
+ID: c22018 - Macronix MX25L12833F/MX25L12835F 3V 128-MBit Serial Flash Memory
+ID: c22539 - Macronix MX25U25645G 1.8V 256-MBit Serial Flash Memory
+ID: c2253a - Macronix MX25U51245G 1.8V 512-MBit Serial Flash Memory
+ID: c84016 - GigaDevice GD25Q32x/GD25B32x 32MBit 3.3V Uniform Sector Dual and Quad Serial Flash
+ID: c84017 - GigaDevice GD25Q64x 64MBit 3.3V Uniform Sector Dual and Quad Serial Flash
+ID: c84018 - GigaDevice GD25Q127x/GD25Q128x 128MBit 3.3V Uniform Sector Dual and Quad Serial Flash
+ID: c84318 - GigaDevice GD25F128x 128MBit 3.3V Uniform Sector Dual and Quad Serial Flash
+ID: ef4015 - Winbond W25Q16JV-xxQ 3V 16-MBit Serial Flash Memory
+ID: ef4016 - Winbond W25Q32JV-xxQ 3V 32-MBit Serial Flash Memory
+ID: ef4017 - WinBond W25Q64JV-xxQ 3V 64-MBit Serial Flash Memory
+ID: ef4018 - WinBond W25Q128JV-xxQ 3V 128-MBit Serial Flash Memory
+ID: ef7015 - Winbond W25Q16JV-xxM 3V 16-MBit Serial Flash Memory
+ID: ef7016 - Winbond W25Q32JV-xxM 3V 32-MBit Serial Flash Memory
+ID: ef7017 - WinBond W25Q64JV-xxM 3V 64-MBit Serial Flash Memory
+ID: ef7018 - WinBond W25Q128JV-xxM 3V 128-MBit Serial Flash Memory
+ID: ffffff - Generic compatible 16-MBit Flash 
+
+Important:
+Besides this list, all flash types that support SFDP V1.6 and pass the tool's
+compatibility check can be used and programmed using default speeds.
+
+If the flash type used in your hardware design is not in the list, but should
+be compatible according to the requirements in the above mentioned document,
+the tool will check if the device supplies SFDP V1.6 parameters.
+If yes, the tool performs a compatibility check for the flash device and if
+that passes the flash can be programmed and read.
+
+If not (no SFDP support at all, or versions < 1.6) it will switch to use the 
+data of a "Generic compatible 16MBit flash device".
+IMPORTANT:
+This device will most probably work for flashing the firmware, but it cannot
+be guaranteed, that the necessary non-volatile "quad mode enable" setting can
+be performed correctly.
+In that case you will encounter verify errors when updating the firmware
+using fwupdate.bat and this can be checked if the following invocations
+of spi_flash.exe will not result in verify errors:
+
+spi_flash.exe -update=SPD -in=<FW-Image file> -fast -flashmode=READ
+or
+spi_flash.exe -update=SPD -in=<FW-Image file> -fast -flashmode=FAST_READ
+
+In that case please contact Marvell (see section Technical support) and we
+will check if and how we can help you in getting the new "compatible" flash
+device running with the tool and the firmware.
+
+
+History of released versions:
+-----------------------------
+V3.05.0003: -fix: TOOL-2094 - fix QER mode bit handling wrong for WinBond flash devices
+
+V3.05.0002: -fix: TOOL-2085 - fix Address configuration for die#1 is not restored for SINGLE_FLASH image (shared SPI)
+
+V3.05.0001: -fix: TOOL-2084 - fix "Unable to resolve register..." for 88Q5192 Rev. Bx
+            -improved messages / warnings with SINGLE_FLASH images for 88Q5192
+			
+V3.05.0000: -CR:  TOOL-2058 - Add support for 88Q5152/88Q5192 Rev C0
+            -CR:  TOOL-2065 - Correctly support GigaDevice flash devices with updated JEDEC 216 code
+            -fix: TOOL-1965 - Unable to resolve registers
+            -fix: TOOL-1820 - fixed JTAG MAX and FAST modes
+            -fix: TOOL-2046 - JTAG access fails for MVQ6223/MVQ6222 if CPU is disabled
+            -fix: TOOL-2029 - Checked handling of flash size for SFDP capable flash without .sfdp file
+            -fix: TOOL-2072 - Added message after updating firmware image of die#0 of a 88Q5192 in 
+                              case of single image configuration.            
+
+V3.04.0004: -fix: TOOL-1971: SPI_FLASH v3.04.0003 fails when started for 88Q5040/88Q5152/88Q5192 
+V3.04.0003: -fix: TOOL-1942: SPI_FLASH 3.04.0002 doesn't work with AESGEN2 devices any more
+            -fix: TOOL-1965: SPI_FLASH 3.04.0003 ALPHA warns about unresolvable registers
+            -fix: TOOL-1966: 88Q5192 patched MAC address for die1 not available after flashing
+		
+V3.04.0002: -fix: Flashing an image with erased unsecure data area (part D) causes 
+             MAC address restore to fail (TOOL-1862)
+            -fix: -update not working properly (TOOL-1931)
+
+V3.04.0000: -added feature: CR Add support for MVQ6223/MVQ6222 (TOOL-1771)
+            -fixed: status read at end of blocks in JTAG MAX mode (TOOL-1821) 
+            
+V3.03.0003: -fix: Tool-1758 Wrong message "No MAC address configured" during update
+
+V3.03.0002: -fix: Tool-1567 "Allow update of partitions from SPB (new flash layout for 88Q5152/88Q5192 Rev B0)
+            -fix: Tool-1590 Erroneous "You are going to flash a FW image with the wrong layout"
+            -added support for 88Q5152/88Q5192 Rev B1
+            -added feature: TOOL-1698 Use SHA256 instead of MD5 for checksums
+             allowing the use of HSM to calculate hashes/checksums in hardware for 88Q5152/88Q5192 Rev >= B0
+            -removed support for flash device "Cypress S25FL128S" (no 4K erase)
+
+V3.03.0001: -CR Tool-1503 "Support new flash layout for 88Q5152/88Q5192 Rev B0
+            -fix: makefile add missing module dir
+
+V3.03.0000: -basic support for 88Q5152/88Q5192 Rev B0
+             will always flash full image, no single partition update  
+
+V3.02.0002: -fixed save/restore MAC address
+            -updated readme
+
+V3.02.0001: -fixed broken -dmode option
+            -fixed program being too verbose despite of -quiet option
+            -added information for -jtagmode to readme  
+            -preset defaults for -flashmode and -maxflashmhz to QIOR and 84
+            -updated the list of supported flash devices in the readme
+            -fixed save/restore MAC address
+            -updated readme
+
+V3.02.0000: -bugfix for -jtagmode=MAX for 88Q51xx devices.
+            -added support for images containing a backup MBR
+            -added support to allow writing data to flash areas not
+             referenced by the MBR (firmware image)
+            -added check for programming a new image with the
+             Temporary partition ending beyond physical flash size.
+             (boards with 2MB flash devices)
+            -bugfix for error message after successful verify of -erase
+ 
+V3.01.0000: -bugfix for -update for non-88Q51xx devices.
+             (SPI addressing was using paged access)
+            -improved JTAG access using IdleClock cycles for delay
+            -fixed JTAG daisy-chain mode
+            -improved handling of multiple JTAG interfaces
+            -improved MBR handling for AES-9508
+
+V3.00.0001: -updated readme
+            -adding support for 88Q51xx
+
+

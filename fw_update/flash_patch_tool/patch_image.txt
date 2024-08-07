@@ -1,0 +1,596 @@
+
+(C)Copyright 2017-2023 Marvell(R). All rights reserved 
+=========================================================================
+
+README for patch_image.exe
+--------------------------------------
+Marvell Flash Image Patch Tool v2.03.0002
+
+Installation
+-------------
+In order to be able to use patch_image.exe you need:
+   - spi_flash.exe copied to a subdirectory of your choice
+   - a firmware image file matching your device (see below)
+
+
+Overview
+---------
+patch_image.exe is the command line tool that allows to patch MAC address, 
+IPv4 and IPv6 addresses into the unsecure configuration area of the image.
+
+It also supports the patching of provisioning data into the image for 
+firmware images for  88Q5152 and 88Q5192 as well as MVQ6223/MVQ6222.
+
+It works on firmware images for several supported devices.
+Currently supported devices are: 
+88Q5050, 88Q5072, 88Q6113, 88Q5040, 88Q5152 and 88Q5192 as well as MVQ6223/MVQ6222
+
+The tool allows setting/adding/modifying/removing one address after the other, 
+or all addresses with one invocation.
+It can also display all configured addresses.
+
+patch_image.exe will only update the file when something is to be changed.
+
+The option -aesgen (Automotive Ethernet Switch Generation) is required for 
+specifying the target device type. 
+When treating image files for 88Q5192 single-flash variants (shared SPI) the 
+tool allows specifying the die number for which the configuration shall be 
+modified. (see command line options below)
+
+The option -devicenum is required for configuring the MAC and IP addresses 
+since the RMU packet used for configuration must contain the device number, 
+which is bootstrapped in the hardware. 
+For the Marvell 88Q5050 Automotive Switch Development Board this value is always 0. 
+Other devices and board designs will require specific values.
+The tool can't check if the given device number is correct, it will only check
+that the specified device number is a legal one for the specified device type.
+
+
+Invocation
+-----------
+patch_image.exe <command line parameters>
+
+The tool will check the command line parameters and fail with an error message
+if it encounters unknown parameters, missing mandatory parameters or parameters
+whose values are out of range.
+
+
+List of command line options
+-----------------------------
+patch_image.exe -? or -help shows the possible command line options.
+
+Output:
+h:\JTAG>patch_image.exe -?
+
+Marvell Flash Image Patch Tool v2.03.0002
+
+
+Command line options for patch_image.exe:
+
+-fwimage=s       - Image file to be used (mandatory)
+-aesgen=n        - Specify Automotive Ethernet Switch generation (mandatory)
+                   1=88Q5050           
+                   2=88Q5072/88Q6113/88Q5040  
+                   3=88Q515x/88Q5192/MVQ6223/MVQ6222 
+-die=n           - specify which data partition shall be treated
+                   in case of single-flash image for 88Q5192
+                   0*=die#0, 1=die#1    (*=default)
+-macaddress=s    - Program MAC address (format xxdxxdxxdxxdxxdxx)
+                   (d is delimiter, either '-' or ':' or '' (empty))
+                   or a file name containing one non-empty line with it
+-show            - Display configured addresses
+-devicenum       - Target device number (may also be given in hex (0x..))
+-ip=s            - Configure IP address
+                   IPV4 (format n1.n2.n3.n4, n1..4: 0..255) or
+                   IPV6 (h1:..:nh or h1:..:h6:d1.d2.d3.d4)
+                   may appear two times (for IPv4 and IPv6)
+-clearall        - remove all entries for given device number
+                   (really all entries when no device number is given)
+-delete          - remove given entry from the list
+                   (macaddress or ip for given device)
+-patchaddr=x     - optionally patch at a different address
+-provision_img=s - Image file (binary) to be used as provisioning data
+-help|?          - Show this page and exit
+
+
+Command line option may be abbreviated as long as they remain unique.
+e.g. -fw -mac -device
+
+
+Types of Firmware Image Files
+------------------------------
+Basically there a 3 different types of firmware image files:
+SingleCPU, DualFlash and SingleFlash images.
+
+For AES generation 1 and 2 the used type is SingleCPU image. 
+This image contains a primary and a backup MBR and one primary and 
+one secondary code partition. There's also only one unsecure data 
+partition, to which this tool will write config data to.
+ 
+The other two types are used for AES generation 3:
+A SingleFlash image is for 88Q5192 being configured to shared/single SPI. 
+This is done by configuring only one flash device to be used by wiring or 
+jumper setting (depending on the PCB) and via setting the appropriate CFG OTP
+bits. This type of image contains 2 sets of primary and backup MBR with 
+different content and 2 sets of firmware images.
+It also contains an unsecure data partition for each CPU (die), which needs to
+be specified when configuring using this tool.  
+
+The DualFlash image type can be used for 88Q515x (one CPU, one flash device) 
+and for 88Q5192 (two CPUs, two separate flash devices).
+This type of image contains 2 identical sets of primary and backup MBR with 
+only firmware image (consisting of code and data partitions).
+When used with a 88Q515x the second set of MBRs is just not used and 
+the data partition is configured like in the SingleCPU type image.
+
+When used with a 88Q5192 with two flash devices (DualFlash) the MAC address 
+and IP addresses for the two devices can be easily configured by assigning
+two different device IDs via hardware bootstrap pins (DIP switch on DevBoard).
+e.g. Die1: DeviceID 1  and Die2: DeviceID 2
+The patched/configured image must then be flashed to both devices.
+
+Alternatively, one can create two copies of the original firmware image file,
+one for Die1 and one for Die2 (e.g. fw_image_die1.bin/fw_image_die2.bin),
+patch/configure these images and write them to the two devices accordingly.
+
+patch_image.exe scans the image file and detects the image file type to
+be able to patch/write the configuration at the right address and uses this 
+information for plausibility checks together with -aesgen= to prevent 
+erroneous writing to the image.
+
+
+Specifying IPv6 addresses
+--------------------------
+There exists a big variety in how to specify valid IPv6 addresses.
+The standard (called preferred) format is 
+  8 blocks of 16-bit values delimited by colon  (:)
+  example: 
+  0001:0000:0000:0000:0000:ffff:c0a8:b201
+  
+In compressed format blocks containing only 0's may be omitted and
+replaced by a double colon (::) and leading 0 may be omitted too.
+Example for valid IPv6 addresses in compressed format:
+
+	1::ffff:c0a8:b201 
+which is in effect the same address as the one above.
+
+For mapped IPv4 addresses in IPv6 address space a mixed format is also
+used, which may as well be compressed for the IPv6 part. The least significant 
+32 bits of the IPv6 address are then represented by a dotted (.) IPv4 address.
+
+Example:
+1::ffff:192.168.178.1
+which again is the same address as the one above.
+
+There exist some special notations for special addresses:
+::10.45.100.200   is the notation for the 
+IPv4-Compatible Embedded IPv6 Address 0:0:0:0:10.45.100.200.
+
+:: is the notation for 0:0:0:0:0:0:0:0 (any net)
+
+The tool will accept an IPv6 address specified in any valid notation,
+but display the configured addresses only in standard format.
+
+
+MAC address from file
+----------------------
+If the value of the option -macaddress is the name of file, the tool will read
+its content and take the first non-empty line as the MAC address to use.
+(See sample file macaddr.txt)
+
+The MAC address may be preceded by: "MAC address = " with all white space 
+being optional too.
+The MAC address itself may contain the delimiters '-' or ':' or none.
+
+Examples:
+
+Plain MAC address without delimiter:
+00005ab01234
+
+With delimiters
+00:00:5a:b0:12:34
+or
+00-00-5a-b0-12-34
+
+
+If the file contains a list of MAC addresses one per line, you could remove the
+first non-empty line after each successful patching of an image, so the next
+invocation of the Marvell Flash Image Patch Tool will use the next 
+MAC address from the file, if invoked with -macaddress=<filename>. 
+
+The Marvell Flash Image Patch Tool will abort when the file does not
+or no longer contain a MAC address.
+
+
+Provisioning data
+------------------
+Firmware image files for -aesgen=3 can be patched with provisioning data.
+The parameter -provision_img specifies the file name for the binary data to be
+patched int to the image.
+In case of a single flash / shared SPI image for 88Q5192 this must be done for
+both dies. (-die=0/1) 
+As the area where this data is patched to, normally is not contained in the 
+firmware image file, the image file will be appended with 0xFF data to contain
+the target region. In that case the increased size of the image will then be 
+shown in the output too.
+Also the whole region will be filled with 0xFF data before the provisioning data 
+is merged into the image, in order to allow overwriting data from previous 
+versions/attempts.
+There is no parameter to clean the provisioning area and shrink the file.
+Once the file has been extended, the only way to shrink it to its original 
+size is to overwrite it with a copy of the original firmware image file,
+and applying any other configuration changes made.
+In order to "clean" the provisioning data in the extended image, patch an 
+empty (zero size) provisioning data file. e.g. -provision_img=empty.bin
+The increased size of the firmware image does not affect the time need to 
+flash the image since blocks of 0xFF bytes will be skipped.
+
+Marvell Flash Image Patch Tool -aesgen=3 -fwimage=test.bin -provision_img=prov_die0.bin 
+
+Sucessfully patched provisioning image of 54321 bytes to offset 0x3e2000
+Successfully wrote patched image file to test.bin
+
+
+Device#:  0   MAC address:  02:00:00:01:00:01
+
+Checking if an image contains provisioning data
+------------------------------------------------
+In order to check if a firmware image already contains provisioning data,
+just execute Marvell Flash Image Patch Tool -aesgen=3 -show  or in case of a single flash
+image Marvell Flash Image Patch Tool -aesgen=3 -show -die=0  or 1.
+If the image contains provisioning data, the detected size of this data will
+be displayed too. e.g.
+
+Device#:  0   MAC address:  02:00:00:02:00:01
+
+Image for die#1 contains 54321 bytes of provisioning data
+
+
+Marvell Flash Image Patch Tool finished successfully.
+
+or when no provisioning data is found:
+
+Device#:  0   MAC address:  02:00:00:01:00:01
+
+
+Marvell Flash Image Patch Tool finished successfully.
+
+
+
+Exit codes
+-----------
+0   - no error, normal termination
+1   - command / parameter error
+2   - timeout error
+3   - parameter or value is missing
+4   - error related to a value's range
+5   - error not belonging to any of the other classes
+
+Technical support
+------------------
+If you need help and assistance please follow the link to the salesforce server 
+(https://mymarvell.force.com/customers/login) and login to your account 
+and open a case for your question.
+
+Known limitations
+------------------
+None. 
+
+
+Examples:
+----------
+
+Show the configured addresses
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -show
+
+Output:
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  02:00:00:00:00:01
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+
+Update the MAC address to 00:00:5a:B0:12:34 and show change
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=0 -macaddress=00:00:5a:B0:12:34 -show
+
+Output:
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  00:00:5a:b0:12:34
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+Configure the IPv4 address 192.168.10.1 and show change
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=0 -ip=192.168.10.1 -show
+
+Output:
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  00:00:5a:b0:12:34
+	Device#:  0   IPv4 address: 192.168.10.1
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+Configure the IPv6 address 1::FFFF:192.168.10.1 and show change
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=0 -ip=1::FFFF:192.168.10.1 -show
+
+Output:
+
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  00:00:5a:b0:12:34
+	Device#:  0   IPv4 address: 192.168.10.1
+	Device#:  0   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:0a01
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+
+Configure MAC address, and IP addresses for a 88Q5072 device and for a 
+specific device number all with one invocation and show changes:
+
+patch_image.exe -fwimage=88Q5072_flash.bin -aesgen=2 -devicenum=8 -mac=00:00:5a:B0:56:78 -ip=192.168.178.1 -ip=1::FFFF:192.168.178.1 -show
+
+Output:
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Successfully wrote patched image file to 88Q5072_flash.bin
+
+	Device#:  8   MAC address:  00:00:5a:b0:56:78
+	Device#:  8   IPv4 address: 192.168.178.1
+	Device#:  8   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:b201
+
+	WARNING: Configuration will be overwritten after flashing due to default MAC address 00:00:5a:b0:56:78!
+	(A valid configuration must have a different MAC address)
+
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+Configure MAC address, and IP addresses all with one invocation and show changes
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=0 -mac=00:00:5a:B0:56:78 -ip=192.168.178.1 -ip=1::FFFF:192.168.178.1 -show
+
+Output:
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  00:00:5a:b0:56:78
+	Device#:  0   IPv4 address: 192.168.178.1
+	Device#:  0   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:b201
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+Executing the command a second time:
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=0 -mac=00:00:5a:B0:56:78 -ip=192.168.178.1 -ip=1::FFFF:192.168.178.1 -show
+
+Output:
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	No change - image file 88Q5050_flash.bin not updated
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  00:00:5a:b0:56:78
+	Device#:  0   IPv4 address: 192.168.178.1
+	Device#:  0   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:b201
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+
+Trying to configure two different IPv4 addresses results in an error:
+
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=0 -ip=192.168.10.1 -ip=192.168.178.1 -show
+
+Output:
+
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Marvell Flash Image Patch Tool failed:
+	ERROR: You cannot specify two IP addresses of the same kind (IPv4/IPv6)!
+
+
+Trying to configure two different MAC addresses
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=0 -mac=00:00:5a:B0:56:78 -mac=00:00:5a:B0:12:34 -show
+
+Output:
+
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  00:00:5a:b0:12:34
+	Device#:  0   IPv4 address: 192.168.178.1
+	Device#:  0   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:b201
+
+Marvell Flash Image Patch Tool finished successfully.
+
+The last specified value for parameter "macaddress" will be configured.
+
+
+Update the MAC address for a different target device number
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=3 -mac=00:00:5a:B0:12:34 -show
+
+Output:
+
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  00:00:5a:b0:12:34
+	Device#:  0   IPv4 address: 192.168.178.1
+	Device#:  0   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:b201
+	Device#:  3   MAC address:  00:00:5a:b0:12:34
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+If the hardware used is configured (bootstrapped) to device ID 3, the 
+MAC address will be used, but the IP addresses will not be configured as 
+they are for a different device ID.
+
+Deleting entries
+-----------------
+In order to delete a specific entry, invoke the tool with the parameters that would create 
+the entry and add the command -delete.
+This will delete the entry if it exists. If not, the command won't do anything.
+
+Delete the last entry added from the previous example:
+  
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=3 -mac=00:00:5a:B0:12:34 -show -delete
+
+Output:
+	Marvell Flash Image Patch Tool v2.03.0002
+
+
+	Deleted 1 configuration entrie(s)
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  00:00:5a:b0:12:34
+	Device#:  0   IPv4 address: 192.168.178.1
+	Device#:  0   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:b201
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+First add entries for two other device numbers:
+
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=1 -mac=00:00:5a:B0:11:11 -ip=192.168.11.1 -ip=1::FFFF:192.168.11.1 -show
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=2 -mac=00:00:5a:B0:22:22 -ip=192.168.22.2 -ip=1::FFFF:192.168.22.2 -show
+
+Output:
+
+	Marvell Flash Image Patch Tool v2.03.0002
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  0   MAC address:  00:00:5a:b0:12:34
+	Device#:  0   IPv4 address: 192.168.178.1
+	Device#:  0   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:b201
+	Device#:  1   MAC address:  00:00:5a:b0:11:11
+	Device#:  1   IPv4 address: 192.168.11.1
+	Device#:  1   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:0b01
+	Device#:  2   MAC address:  00:00:5a:b0:22:22
+	Device#:  2   IPv4 address: 192.168.22.2
+	Device#:  2   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:1602
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+Now let's remove all entries for device number 0:
+
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=0 -clearall -show
+
+Output:
+	Marvell Flash Image Patch Tool v2.03.0002
+
+
+	Deleted 3 configuration entries
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  1   MAC address:  00:00:5a:b0:11:11
+	Device#:  1   IPv4 address: 192.168.11.1
+	Device#:  1   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:0b01
+	Device#:  2   MAC address:  00:00:5a:b0:22:22
+	Device#:  2   IPv4 address: 192.168.22.2
+	Device#:  2   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:1602
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+
+After deleting entries the remaining entries are being sorted by device number
+and config entry type before being patched. 
+When all MAC address entries have been removed the patch image tool automatically
+inserts the default MAC address.
+
+patch_image.exe -fwimage=88Q5050_flash.bin -aesgen=1 -devicenum=1 -macaddres=00:00:5a:b0:11:11 -delete -show
+
+Output:
+	Marvell Flash Image Patch Tool v2.03.0002
+
+
+	Deleted 1 configuration entry
+
+	Successfully wrote patched image file to 88Q5050_flash.bin
+
+	Image: 88Q5050_flash.bin - Version: 2.00.0049  (2017-10-06)
+	Device#:  2   MAC address:  00:00:5a:b0:22:22
+	Device#:  1   IPv4 address: 192.168.11.1
+	Device#:  1   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:0b01
+	Device#:  2   IPv4 address: 192.168.22.2
+	Device#:  2   IPv6 address: 0001:0000:0000:0000:0000:ffff:c0a8:1602
+
+	Marvell Flash Image Patch Tool finished successfully.
+
+
+History of released versions:
+------------------------------
+V2.03.0002: -TOOL-2116: fixed wrong message for single-flash image not containing provisioning data
+
+V2.03.0001: -TOOL-2101: fixed uninitialized var $maxidx when using -show
+
+V2.03.0000: -fixed uninitialized var from -aesgen=
+            -CR TOOL-2075: add functionality to patch provisioning data into image with
+                           updated flash layout (88Q515x/88Q5192/MVQ6223/MVQ6222)
+
+V2.02.0000: -TOOL-1935/TOOL-1928: fixes for updated new flash layout for 88Q515x/88Q5192
+            -TOOL-1849: added MVQ6223/MVQ6222 to online help
+			-added section "Types of Firmware Image Files"
+            -aesgen is mandatory now
+
+V2.01.0000: -TOOL-1528: support for changed flash layout/MBR for 88Q515x/88Q5192 B0
+            -added option -die=  for 88Q5192 single-flash image
+            -updated readme 
+			
+V2.00.0004: -TOOL-1312: update build-process
+
+V2.00.0003: -TOOL-1155: support for changed MBR layout (AES-9508)
+			(get address of unsecure data partition from MBR)
+			-added check for -patchaddr to prevent image corruption
+			-added AESGEN value 3 for 88Q515x/88Q5192
+			-updated readme
+
+V2.00.0002: -CR TOOL-646: remove default MAC address 02:00.00:00:00:01 if any
+			 other valid configuration entry is added.
+			-Checking configuration to comply with restriction set by -aesgen 
+			
+V2.00.0001: -added support 88Q5072/88Q6113 (-aesgen)
+			-updated readme
+			
+V1.02.0001: -added support deleting single and deleting all entries for a specific 
+			 device number.
+			-added support to clear all entries 
+            -bugfixed test for updating an entry
+			
+V1.01.0004: -fixed minor bug in help
+            -improved error handling for comamnd line options with missing values
+            -added detection and warning message for invalid config 
+            (pristine MAC + IP addresses)
+
+V1.02.0001: -support for adding Ipv4 and IPv6 addresses added
+			-generic way to retrieve/patch configuration
+
+V1.01.0002:	-initial version
